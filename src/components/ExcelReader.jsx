@@ -1,9 +1,58 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import ReactPrint from "react-to-print";
+
+
 
 function ExcelReader() {
+    const ref = useRef();
+
     const [data, setData] = useState([]);
     const [filteredData, setFilteredData] = useState([]);
+    const [totalComAmt,setTotalComAmt] = useState(0)
+    const [totalVatAmt,setTotalVatAmt] = useState(0)
+    const [totalPayable,setTotalPayable] = useState(0)
+    const [heading,setHeading] = useState("HEADING")
+    const [dltBtn,setDltBtn] = useState(true)
+    const [finalList,setFinalList] = useState([])
+
+    const downloadPdfDocument = async () => {
+        const input = document.getElementById('table-to-pdf');
+        const canvas = await html2canvas(input, {
+            scale: 1, // You can adjust scale to get higher or lower resolution
+            logging: true, // Helpful for debugging
+            useCORS: true // If your table contains images from external sources
+        });
+        const imgData = canvas.toDataURL('image/png');
+        
+        const pdf = new jsPDF({
+            orientation: 'l',
+            unit: 'px',
+            format: [canvas.width, canvas.height]
+        });
+    
+        // Calculate the number of pages needed to fit the canvas height
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        let heightLeft = canvas.height;
+    
+        // Set initial position for the image top
+        let position = 0;
+    
+        // Add new pages and split the image across these pages
+        pdf.addImage(imgData, 'PNG', 0, position, canvas.width, canvas.height);
+        heightLeft -= pageHeight;
+        
+        while (heightLeft >= 0) {
+            position = position - pageHeight;  // Move position for next image part
+            pdf.addPage(); // Add a new page
+            pdf.addImage(imgData, 'PNG', 0, position, canvas.width, canvas.height);
+            heightLeft -= pageHeight;
+        }
+    
+        pdf.save('download.pdf');
+    };
 
     const handleFileChange = (event) => {
         const file = event.target.files[0];
@@ -15,7 +64,6 @@ function ExcelReader() {
             const wsname = wb.SheetNames[0];
             const ws = wb.Sheets[wsname];
             const jsonData = XLSX.utils.sheet_to_json(ws);
-            console.log(jsonData)
             let renamedData = renameFields(jsonData);
             
              renamedData = renamedData.slice(1);
@@ -23,35 +71,87 @@ function ExcelReader() {
            
             const temp = renamedData.map((x)=>{
 
-                const TranType = x["TRAN TYPE"]
+                const Tran_Type = x["TRAN TYPE"]
                 const SrcAmount = x["SRC AMOUNT"]
-                const AuthCD = x["AUTH CD"]
-                const CommRate = x["COMM RATE"]
+                const Auth_CD = x["AUTH CD"]
+                const Comm_Rate = x["COMM RATE"]
                 // billed amt * comm rate / 100
-                const CommAmt = Number(SrcAmount) * Number(CommRate) / 100
+                const Comm_Amt = (Number(SrcAmount) * Number(Comm_Rate) / 100).toFixed(2);
                 // vat amt = comm amt * 5 / 100
-                const VatAmt = CommAmt * 5 / 100
-                const AmountPayable = SrcAmount - CommAmt - VatAmt
+                const Vat_Amt = (Comm_Amt * 5 / 100).toFixed(2);
+                const Amount_Payable = (SrcAmount - Comm_Amt - Vat_Amt).toFixed(2);
                 // payable amt = billed amt - comm amt - vat amt
-                let y = {Date:x.DATE,Time:x.TIME,TranType,Card:x.CARD,BilledAmount:SrcAmount,AuthCD,CommRate,CommAmt,VatAmt,AmountPayable}
+                let y = {Date:x.DATE,Time:x.TIME,Tran_Type,Card:x.CARD,Billed_Amount:SrcAmount,Auth_CD,Comm_Rate,Comm_Amt,Vat_Amt,Amount_Payable}
                 return y
             })
             setFilteredData(temp)
          
             const formatDate = formatAndModifyDate(temp)
-            setFilteredData(formatDate)
-            // console.log(formatDate)
-            // console.log("temp aboe")
+            const formateTime = formatAndModifyTime(formatDate)
+            setFilteredData(formateTime)
+            calculateTotals(finalList)
+         
         };
 
         reader.readAsArrayBuffer(file);
     };
 
+    function formatAndModifyTime(dataArray) {
+        return dataArray.map(item => {
+            let { Time } = item;
+            let timeString = Time.toString();
+    
+            // Prepend zeros based on the length of the time string
+            if (timeString.length === 3) {
+                timeString = '0' + timeString;  // Add zero at the start if it's a three-digit number
+            } else if (timeString.length === 2) {
+                timeString = '00' + timeString; // Add two zeros at the start if it's a two-digit number
+            }
+    
+            // Insert colon to format as HH:MM
+            timeString = timeString.substring(0, 2) + ':' + timeString.substring(2);
+    
+            // Update the item with the new Time and return it
+            return { ...item, Time: timeString };
+        });
+    }
+
+    function calculateTotals(transactions) {
+        let totalCommAmt = 0;
+        let totalVatAmt = 0;
+        let totalAmountPayable = 0;
+    
+        transactions.forEach(transaction => {
+            totalCommAmt += parseFloat(transaction.Comm_Amt);
+            totalVatAmt += parseFloat(transaction.Vat_Amt);
+            totalAmountPayable += parseFloat(transaction.Amount_Payable);
+        });
+
+        function formatDecimalWithoutRounding(number) {
+            const strNumber = number.toString();
+            const [integerPart, decimalPart] = strNumber.split(".");
+            const truncatedDecimalPart = decimalPart ? decimalPart.slice(0, 2) : "00";
+            return `${integerPart}.${truncatedDecimalPart}`;
+        }
+
+        // totalCommAmt = formatDecimalWithoutRounding(totalCommAmt);
+        // totalVatAmt = formatDecimalWithoutRounding(totalVatAmt);
+        // totalAmountPayable = formatDecimalWithoutRounding(totalAmountPayable);
+
+       
+
+        setTotalComAmt(totalCommAmt.toFixed(2))
+        setTotalVatAmt(totalVatAmt.toFixed(2))
+        setTotalPayable(totalAmountPayable.toFixed(2))
+    
+       
+    }
+
     function renameFields(data) {
         if (data.length === 0) return [];
     
         const newFieldNames = [
-            "DATE", "POST NO", "TIME", "DH", "MERCH ID", "BATCH", "SEQ", 
+            "MERCH ID", "POST NO", "DATE", "DH", "TIME", "BATCH", "SEQ", 
             "TRAN TYPE", "CARD", "AUTH CD", "CARD ISSUER", "CAPTURE TYPE", 
             "PROD TYPE", "REGION", "COMM RATE", "SRC AMOUNT", "AMOUNT", "CRNCY", 
             "COMM AMNT", "COMM CRNCY", "VAT AMT", "VAT CRNCY", "LOY NAME", "LOY RATE", 
@@ -81,7 +181,6 @@ function ExcelReader() {
         return dataArray.map(item => {
             let { Date } = item;
 
-            // console.log(item)
             // Convert to string and check length
             let dateString = Date + '';
             if (dateString.length === 3) {
@@ -120,13 +219,13 @@ function ExcelReader() {
             </div>
             {data.length > 0 && (
                 <>
-                    <div className="overflow-x-auto mt-6">
+                    {/* <div className="overflow-x-auto mt-6">
                         <h2 className="text-lg font-semibold">Full Data</h2>
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
                                     {Object.keys(data[0]).map((key, index) => (
-                                        <th key={index} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th key={index} scope="col" className="px-1 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             {key}
                                         </th>
                                     ))}
@@ -136,7 +235,7 @@ function ExcelReader() {
                                 {data.map((row, index) => (
                                     <tr key={index}>
                                         {Object.values(row).map((cell, cellIndex) => (
-                                            <td key={cellIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td key={cellIndex} className="px-1 py-1 whitespace-nowrap text-sm text-gray-500">
                                                 {cell}
                                             </td>
                                         ))}
@@ -144,32 +243,262 @@ function ExcelReader() {
                                 ))}
                             </tbody>
                         </table>
-                    </div>
-                    <div className="overflow-x-auto mt-6">
-                        <h2 className="text-lg font-semibold">Filtered Data</h2>
-                        <table className="min-w-full divide-y divide-gray-200">
+                    </div> */}
+
+
+                          <span className='flex justify-center mt-2'>
+                              <button onClick={()=>setDltBtn(!dltBtn)} className='bg-blue-500 hover:bg-blue-600 p-2 text-white rounded-md'>
+                                Show/Hide ADD Button
+                                </button>
+                          </span>
+
+                   <span className='flex justify-center mt-2'>
+                   <label htmlFor="" className='mx-auto'>EDIT HEADING</label> <br />
+                   </span>
+                    <span className='flex justify-center'>
+                      
+                      <input type="text" value={heading} onChange={(e)=>setHeading(e.target.value)} className='mb-3 border-2 p-2 rounded-md' placeholder='SET HEADING' />
+                      </span>
+                    <span className=' justify-center w-full hidden '>
+
+                   
+                    <ReactPrint
+        trigger={() => <button className='my-3 px-5 py-1 border rounded-md bg-blue-500 hover:bg-blue-600 cursor-pointer text-white' id="btn">Download PDF</button>}
+        content={() => ref.current}
+        documentTitle={`${heading}`}
+      />
+      
+                    </span>
+                    
+                   
+                              {/* <h2 className="text-lg font-semibold text-center underline mb-3">Filtered Data</h2> */}
+
+                    <div className="overflow-x-auto mt-6 p-5" id="table-to-pdf" ref={ref}>
+                  
+                        {/* <button onClick={downloadPdfDocument}>Download as PDF</button> */}
+                        <table className="min-w-full divide-y divide-gray-200" >
                             <thead className="bg-gray-50">
+                            <tr>
+                                        <th colSpan={10} scope="col" className="px-1 text-center  py-1 border-2 border-black text-md font-medium text-black uppercase tracking-wider">
+                                       {heading}
+                                        </th>
+                                   
+                                </tr>
+
                                 <tr>
                                     {Object.keys(filteredData[0]).map((key, index) => (
-                                        <th key={index} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th key={index} scope="col" className=" text-center  border-2 border-black text-md font-medium text-black  ">
                                             {key}
                                         </th>
                                     ))}
                                 </tr>
+
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {filteredData.map((row, index) => (
+                                {/* {filteredData.map((row, index) => (
                                     <tr key={index}>
                                         {Object.values(row).map((cell, cellIndex) => (
-                                            <td key={cellIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td key={cellIndex} className=" border-2 border-b-2 border-black text-center  whitespace-nowrap text-md text-black">
                                                 {cell}
                                             </td>
+                                            
                                         ))}
                                     </tr>
-                                ))}
+                                ))} */}
+
+{
+                                    filteredData.map((x)=>{
+                                        return(
+                                            <tr>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Date}
+                                                </td>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Time}
+                                                </td>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Tran_Type}
+                                                </td>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Card}
+                                                </td>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Billed_Amount}
+                                                </td>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Auth_CD}
+                                                    {dltBtn && 
+                                                      <button
+                                                      onClick={()=>{
+                                                        // let temp = finalList
+                                                        // temp.push(x)
+                                                        setFinalList(prevArray => [...prevArray, x]);
+                                                        calculateTotals(finalList)
+
+                                                      }}
+                                                      className='bg-green-500 ml-5 px-2 rounded-md text-white'>+</button> 
+                                                    }
+                                                </td>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Comm_Rate}
+                                                </td>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Comm_Amt}
+                                                </td>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Vat_Amt}
+                                                </td>
+                                                <td className='border-2 border-black text-center'>
+                                                    {x.Amount_Payable}
+                                                </td>
+                                            </tr>
+                                        )
+                                    })
+                                }
+
+
+                                <tr>
+    <td colSpan="6" className='border-b-0'></td>
+    <td className="py-1 border-2 border-black  text-center"><strong>TOTAL</strong></td>
+    <td className="py-1 border-2 border-black text-center">
+    {totalComAmt}
+    </td>
+    <td className="py-1 border-2 border-black text-center">{totalVatAmt}</td>
+    <td className="py-1 border-2 border-black text-center">{totalPayable}</td>
+
+</tr>
                             </tbody>
                         </table>
                     </div>
+{/* 
+                    <span className='flex justify-center mt-2'>
+                              <button onClick={()=>setDltBtn(!dltBtn)} className='bg-blue-500 hover:bg-blue-600 p-2 text-white rounded-md'>
+                                Show/Hide ADD Button
+                                </button>
+                          </span> */}
+
+                   {finalList.length > 0 &&
+                   <div className="overflow-x-auto mt-6 p-5" id="table-to-pdf" ref={ref}>
+                  
+                   {/* <button onClick={downloadPdfDocument}>Download as PDF</button> */}
+                   <table className="min-w-full divide-y divide-gray-200" >
+                       <thead className="bg-gray-50">
+                       <tr>
+                                   <th colSpan={10} scope="col" className="px-1 text-center  py-1 border-2 border-black text-md font-medium text-black uppercase tracking-wider">
+                                  {heading}
+                                   </th>
+                              
+                           </tr>
+
+                           <tr>
+                               {Object.keys(finalList[0]).map((key, index) => (
+                                   <th key={index} scope="col" className=" text-center  border-2 border-black text-md font-medium text-black  ">
+                                       {key}
+                                   </th>
+                               ))}
+                           </tr>
+
+                       </thead>
+                       <tbody className="bg-white divide-y divide-gray-200">
+                           {/* {filteredData.map((row, index) => (
+                               <tr key={index}>
+                                   {Object.values(row).map((cell, cellIndex) => (
+                                       <td key={cellIndex} className=" border-2 border-b-2 border-black text-center  whitespace-nowrap text-md text-black">
+                                           {cell}
+                                       </td>
+                                       
+                                   ))}
+                               </tr>
+                           ))} */}
+
+{
+                               finalList.map((x)=>{
+                                   return(
+                                       <tr>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Date}
+                                           </td>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Time}
+                                           </td>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Tran_Type}
+                                           </td>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Card}
+                                           </td>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Billed_Amount}
+                                           </td>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Auth_CD}
+                                               {/* {dltBtn && 
+                                                 <button
+                                                 onClick={() => {
+                                                    setFinalList(prevArray => prevArray.filter(item => item.Auth_CD !== x.Auth_CD));
+                                                
+                                                }}
+                                                 className='bg-red-500 ml-5 px-2 rounded-md text-white'>X</button> 
+                                               } */}
+                                           </td>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Comm_Rate}
+                                           </td>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Comm_Amt}
+                                           </td>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Vat_Amt}
+                                           </td>
+                                           <td className='border-2 border-black text-center'>
+                                               {x.Amount_Payable}
+                                           </td>
+                                       </tr>
+                                   )
+                               })
+                           }
+
+
+                           <tr>
+<td colSpan="6" className='border-b-0'></td>
+<td className="py-1 border-2 border-black  text-center"><strong>TOTAL</strong></td>
+<td className="py-1 border-2 border-black text-center">
+{totalComAmt}
+</td>
+<td className="py-1 border-2 border-black text-center">{totalVatAmt}</td>
+<td className="py-1 border-2 border-black text-center">{totalPayable}</td>
+
+</tr>
+                       </tbody>
+                   </table>
+
+                  
+               </div>
+                   }
+                    <span className='flex justify-center'>
+                   <button onClick={()=>{
+                   
+                  
+                    const seen = new Set();
+
+                    // Filter out duplicate objects based on Auth_CD
+                    const uniqueTransactions = finalList.filter(transaction => {
+                        const isDuplicate = seen.has(transaction.Auth_CD);
+                        seen.add(transaction.Auth_CD);
+                        return !isDuplicate;
+                    });
+
+                    setFinalList(uniqueTransactions)
+                    setDltBtn(false)
+                    calculateTotals(finalList)
+                   setTimeout(()=>{
+                    document.getElementById('btn').click()
+                   },1000)
+ 
+
+                   }} className='my-3 px-5 py-1 border rounded-md bg-blue-500 hover:bg-blue-600 cursor-pointer text-white' id="btn">Download PDF</button>
+                   </span>
+                    
                 </>
             )}
         </div>
