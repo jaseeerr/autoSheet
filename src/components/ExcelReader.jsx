@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState,useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -107,6 +107,9 @@ function ExcelReader() {
             } else if (timeString.length === 2) {
                 timeString = '00' + timeString; // Add two zeros at the start if it's a two-digit number
             }
+            else if (timeString.length === 1) {
+                timeString = '000' + timeString; // Add two zeros at the start if it's a two-digit number
+            }
     
             // Insert colon to format as HH:MM
             timeString = timeString.substring(0, 2) + ':' + timeString.substring(2);
@@ -197,7 +200,9 @@ function ExcelReader() {
         });
     }
 
-   
+    useEffect(() => {
+        calculateTotals(finalList);
+    }, [finalList]);
 
 
     return (
@@ -329,13 +334,21 @@ function ExcelReader() {
                                                     {x.Auth_CD}
                                                     {dltBtn && 
                                                       <button
-                                                      onClick={()=>{
-                                                        // let temp = finalList
-                                                        // temp.push(x)
-                                                        setFinalList(prevArray => [...prevArray, x]);
-                                                        calculateTotals(finalList)
+                                                    //   onClick={()=>{
+                                                      
+                                                    //     setFinalList(prevArray => [...prevArray, x]);
+                                                    //     calculateTotals(finalList)
+                                                    //     const temp = filteredData.filter((x)=>x.Auth_CD!=filteredData.Auth_CD)
+                                                    //     setFilteredData(temp)
 
-                                                      }}
+                                                    //   }}
+                                                    onClick={() => {
+                                                        setFinalList(prevArray => [...prevArray, x]);
+                                                        setFilteredData(prevFiltered => prevFiltered.filter(item => item.Auth_CD !== x.Auth_CD))
+                                                      
+                                                        
+                                                       
+                                                    }}
                                                       className='bg-green-500 ml-5 px-2 rounded-md text-white'>+</button> 
                                                     }
                                                 </td>
@@ -490,7 +503,7 @@ function ExcelReader() {
 
                     setFinalList(uniqueTransactions)
                     setDltBtn(false)
-                    calculateTotals(finalList)
+                    calculateTotals(uniqueTransactions)
                    setTimeout(()=>{
                     document.getElementById('btn').click()
                    },1000)
