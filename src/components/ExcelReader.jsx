@@ -120,6 +120,13 @@ function ExcelReader() {
     }
 
     function calculateTotals(transactions) {
+        if(transactions.length==0)
+            {
+                transactions = filteredData
+            }
+            
+
+
         let totalCommAmt = 0;
         let totalVatAmt = 0;
         let totalAmountPayable = 0;
@@ -202,7 +209,10 @@ function ExcelReader() {
 
     useEffect(() => {
         calculateTotals(finalList);
+        
     }, [finalList]);
+
+   
 
 
     return (
@@ -222,7 +232,7 @@ function ExcelReader() {
                             />
                 </label>
             </div>
-            {data.length > 0 && (
+            {data.length > 0  && (
                 <>
                     {/* <div className="overflow-x-auto mt-6">
                         <h2 className="text-lg font-semibold">Full Data</h2>
@@ -312,7 +322,7 @@ function ExcelReader() {
                                 ))} */}
 
 {
-                                    filteredData.map((x)=>{
+                             filteredData.length >0 && filteredData.map((x)=>{
                                         return(
                                             <tr>
                                                 <td className='border-2 border-black text-center'>
@@ -503,7 +513,9 @@ function ExcelReader() {
 
                     setFinalList(uniqueTransactions)
                     setDltBtn(false)
+                    console.log("uni len",uniqueTransactions.length)
                     calculateTotals(uniqueTransactions)
+                   
                    setTimeout(()=>{
                     document.getElementById('btn').click()
                    },1000)
