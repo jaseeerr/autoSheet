@@ -3,10 +3,12 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import ReactPrint from "react-to-print";
+import { saveAs } from 'file-saver';
 
 
 
 function ExcelReader() {
+
     const ref = useRef();
 
     const [data, setData] = useState([]);
@@ -17,6 +19,23 @@ function ExcelReader() {
     const [heading,setHeading] = useState("HEADING")
     const [dltBtn,setDltBtn] = useState(true)
     const [finalList,setFinalList] = useState([])
+
+
+    const downloadExcel = () => {
+        const data = [
+          { Name: 'John', Age: 28 },
+          { Name: 'Jane', Age: 32 },
+          { Name: 'Mike', Age: 25 },
+        ];
+      
+        const worksheet = XLSX.utils.json_to_sheet(finalList);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+      
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
+        saveAs(blob, `${heading}.xlsx`);
+      };
 
     const downloadPdfDocument = async () => {
         const input = document.getElementById('table-to-pdf');
@@ -198,7 +217,7 @@ function ExcelReader() {
             }
             
             // Rearrange the digits: swap the first two digits to the end and add '24'
-            dateString = dateString.substring(2) + dateString.substring(0, 2) + '24';
+            dateString = dateString.substring(2) + dateString.substring(0, 2) + '25';
             // Insert slashes: MM/DD/YYYY format
             dateString = dateString.substring(0, 2) + '/' + dateString.substring(2, 4) + '/' + dateString.substring(4);
     
@@ -278,12 +297,13 @@ function ExcelReader() {
 
                    
                     <ReactPrint
-        trigger={() => <button className='my-3 px-5 py-1 border rounded-md bg-blue-500 hover:bg-blue-600 cursor-pointer text-white' id="btn">Download PDF</button>}
+        trigger={() => <button className='my-3 px-5 py-1 border rounded-md bg-blue-500 hover:bg-blue-600 cursor-pointer text-white' id="btn">Download PDF1</button>}
         content={() => ref.current}
         documentTitle={`${heading}`}
       />
       
                     </span>
+                  
                     
                    
                               {/* <h2 className="text-lg font-semibold text-center underline mb-3">Filtered Data</h2> */}
@@ -523,6 +543,10 @@ function ExcelReader() {
 
                    }} className='my-3 px-5 py-1 border rounded-md bg-blue-500 hover:bg-blue-600 cursor-pointer text-white' id="btn">Download PDF</button>
                    </span>
+                   <span className='flex justify-center'>
+                    <button  className='my-3 px-5 py-1 border rounded-md bg-blue-500 hover:bg-blue-600 cursor-pointer text-white' onClick={downloadExcel}>Download as Excel</button>
+
+                    </span>
                     
                 </>
             )}
